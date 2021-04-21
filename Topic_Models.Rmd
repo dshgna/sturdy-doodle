@@ -4,119 +4,105 @@ output: html_notebook
 ---
 
 ```{r setup}
-library(RedditExtractoR)
-library(quanteda)
-library(spacyr)
-library(stm)
-library(tidyverse)
-library(wordcloud)
+knitr::opts_chunk$set(
+  cache = TRUE
+)
 
-spacy_initialize(model = "en_core_web_sm")
+library(arrow) # data retrieval from storage
+library(quanteda) # general purpose text analysis
+library(spacyr) # lemmatisation, pos tagging
+library(stm) # topic models
+library(tidyverse) # dataframe manipulation
+library(wordcloud) # wordcloud visualization
+
+spacy_initialize(model = "en_core_web_trf")
 ```
 
 ```{r}
-# collecting up to 5 pages of posts in r/changemyview
-rd <- get_reddit(subreddit = "changemyview", sort = "new", page_threshold = 5)
-```
-
-
-```{r}
-head(rd)
-```
-
-```{r}
-# deleting bot messages and removed messages
-rd <- rd[rd$user != "DeltaBot", ]
-```
-
-```{r}
-head(rd)
-```
-```{r}
-# finding comments that gave deltas
-rd$delta <- grepl("!delta|#8710|\006", rd$comment)
-```
-```{r}
-# Removing extraneous columns
-rd <- rd %>%
-  select(!c('subreddit', 'domain'))
+# Function to read in data from storage 
+read_reddit_data <- function(subreddit) {
+  path = paste0('data/', subreddit)
+  df <- read_feather(path)
+  return(df)
+}
 ```
 
 
 ```{r}
-head(rd[rd$delta == TRUE,])
+cmv <- read_reddit_data('changemyview')
+head(cmv, 2)
 ```
 
 ```{r}
-rd[55:63,]
+# Pre-processing before tokenizing
+# Combine the title and post text
+# Remove URLS and zero-width spaces &#x200B
+url_pattern <- "[(]?http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
+zero_width_space_pattern <- "&#x200(b|B)"
+
+cmv <- cmv %>%
+  mutate(text_with_title = paste(title, selftext)) %>%
+  select(!c("selftext")) %>%
+  mutate(text_with_title = str_replace_all(text_with_title, url_pattern, ''),
+         text_with_title = str_replace_all(text_with_title, zero_width_space_pattern, ''))
 ```
 
-
-
 ```{r}
-# finding comments that changed people's minds
-deltas <- which(rd$delta) # comments that assign deltas
+head(cmv, 2)
 ```
 
 ```{r}
-rd_posts <- rd[!duplicated(rd$post_text),] %>%
-  mutate(complete_text = str_replace_all(paste(title, post_text), "\031", "'"))
+#rd_posts <- rd[!duplicated(rd$post_text),] %>%
+#  mutate(complete_text = str_replace_all(paste(title, post_text), "\031", "'"))
 ```
 
 ```{r}
 # Create a corpus from the text of posts 
-(cmv_text_corpus <- corpus(rd_posts, text_field = 'complete_text'))
-```
-
-
-```{r}
-test <- spacy_parse(cmv_text_corpus, pos = TRUE, tag = TRUE, lemma = TRUE) %>% 
-        subset(!pos %in% c('VERB', 'SYM', 'PUNCT', 'X', 'NUM', 'SPACE', 'ADV', 'PART', 'AUX'))
-
-test %>%
-  subset(token = '*')
+(cmv_text_corpus <- corpus(cmv, text_field = 'text_with_title'))
 ```
 
 
 
+
 ```{r}
-# TODO: Add URL removal
-# spacyR used to lemmatise instead of wordstems
-cmv_text_tokens <- spacy_parse(cmv_text_corpus, pos = TRUE, tag = TRUE, lemma = TRUE) %>% 
-        subset(!pos %in% c('VERB', 'SYM', 'PUNCT', 'X', 'NUM', 'SPACE', 'ADV', 'PART', 'AUX')) %>% 
+(cmv_text_summary <- textstat_summary(corpus(cmv_url, text_field = 'full_text')))
+```
+
+```{r}
+# TODO: Differentiate adverbs of manner
+# Tokenize corpus
+# pre-processing steps after tokenizing
+# lemmatization, removal of noisy POS tags (e.g. PUNCT), stopword removal, ngram detection, removal of urls
+cmv_spacy_tokens <- spacy_parse(cmv_text_corpus) %>% 
+        subset(!pos %in% c('ADP', 'ADV', 'AUX', 'PART', 'PUNCT', 'SPACE', 'SYM')) %>%
+        subset(!entity %in% c('PERCENT_I'))
+        #subset(!pos %in% c('VERB', , 'X', 'NUM' 'ADV', 'PART',)) %>% 
+  
+# Convert from Spacy to Quanteda
+cmv_text_tokens <- cmv_spacy_tokens %>%
         as.tokens(use_lemma = TRUE) %>%
-        tokens_remove(pattern = c("amp;"), valuetype = "regex", padding = TRUE) %>% 
-        tokens_remove(pattern = c("?"), padding = TRUE) %>% # Remove single character tokens
-  #tokens_remove(pattern = c("_", "%", "*", "-"), valuetype = "fixed", padding = TRUE) %>% 
-        tokens_remove(stopwords("en"), padding = TRUE) 
-#%>%
-       # tokens_ngrams(n = 1:2) 
-   
-(cmv_text_dfm <- cmv_text_tokens %>%
+        #tokens_remove(pattern = c("amp;"), valuetype = "regex", padding = TRUE) %>% 
+        tokens_remove(pattern = c("_"), valuetype = "fixed", padding = TRUE) %>% 
+        tokens_remove(stopwords("en"), padding = TRUE) %>%
+        tokens_ngrams(n = 1:2) 
+        #tokens_remove(pattern = c("?"), padding = TRUE) # Remove single character tokens
+
+# Create document feature matrix
+# Trim dfm to remove features that appear less than 5 times in the corpus 
+# and those that appear in more than 90% of the documents
+(cmv_dfm <- cmv_text_tokens %>%
         dfm() %>%
-        dfm_trim(min_termfreq = 5, max_docfreq = 0.5, docfreq_type = 'prop')
+        dfm_trim(min_termfreq = 5, max_docfreq = 0.7, docfreq_type = 'prop')
 )
 
-docvars(cmv_text_dfm) <- docvars(cmv_text_corpus)
-```
+# Spacy removes the docvars - re-attach docvars from the initial corpus
+docvars(cmv_dfm) <- docvars(cmv_text_corpus)
 
-
-```{r}
-# remove �
-kwic(cmv_text_tokens, pattern = "-", valuetype = "fixed", window = 10)
-```
-
-
-
-```{r}
-featfreq(cmv_text_dfm)
-```
-
-
-```{r}
 # Convert dfm into a format suitable for STM input
-stm_input <- convert(cmv_text_dfm, to = "stm")
+stm_input <- convert(cmv_dfm, to = "stm")
 ```
+
+
 
 ```{r}
 # Choose a number of appropriate topics
@@ -131,37 +117,40 @@ plot(k_search_output)
 ```
 
 
-
-
-
 ```{r}
-# Suggested best model
-#scale(k_search_output$results$K, center = TRUE, scale = TRUE)
+k_search_output
 ```
 
 ```{r}
+# Plot exclusion
+plot(k_search_output$K, )
+```
+
+
+
+```{r, fig.height = 5, fig.width = 5}
 # Create model with optimum number of topics
-cmv_model <- stm(stm_input$documents, stm_input$vocab, K = 30,
+cmv_model <- stm(stm_input$documents, stm_input$vocab, K = 20,
                data = stm_input$meta, verbose = FALSE,
                init.type = c("Spectral"))
-```
 
-
-```{r}
 plot(cmv_model)
 ```
+
+
+
 ```{r}
 # Wordclouds
-c1 <- cloud(cmv_model, topic = 1, scale = c(2,.25))
-c2 <- cloud(cmv_model, topic = 2, scale = c(2,.25))
-c3 <- cloud(cmv_model, topic = 3, scale = c(2,.25))
-c4 <- cloud(cmv_model, topic = 4, scale = c(2,.25))
-c5 <- cloud(cmv_model, topic = 5, scale = c(2,.25))
-#c6 <- cloud(cmv_model, topic = 6, scale = c(2,.25))
-#c7 <- cloud(cmv_model, topic = 7, scale = c(2,.25))
-#c8 <- cloud(cmv_model, topic = 8, scale = c(2,.25))
-#c9 <- cloud(cmv_model, topic = 9, scale = c(2,.25))
-#c10 <- cloud(cmv_model, topic = 10, scale = c(2,.25))
+c1 <- cloud(cmv_model7, topic = 2, scale = c(2,.25))
+c2 <- cloud(cmv_model7, topic = 2, scale = c(2,.25))
+c3 <- cloud(cmv_model7, topic = 3, scale = c(2,.25))
+c4 <- cloud(cmv_model7, topic = 4, scale = c(2,.25))
+c5 <- cloud(cmv_model7, topic = 5, scale = c(2,.25))
+c6 <- cloud(cmv_model7, topic = 6, scale = c(2,.25))
+c7 <- cloud(cmv_model7, topic = 7, scale = c(2,.25))
+c8 <- cloud(cmv_model7, topic = 8, scale = c(2,.25))
+c9 <- cloud(cmv_model7, topic = 9, scale = c(2,.25))
+c10 <- cloud(cmv_model7, topic = 10, scale = c(2,.25))
 ```
 ```{r}
 # Get topic proportions for each document
