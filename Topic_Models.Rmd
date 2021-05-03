@@ -74,7 +74,7 @@ head(cmv, 2)
 # pre-processing steps after tokenizing
 # lemmatization, removal of noisy POS tags (e.g. PUNCT), stopword removal, ngram detection, removal of urls
 cmv_spacy_tokens <- spacy_parse(cmv_text_corpus) %>% 
-        subset(!pos %in% c('ADP', 'ADV', 'AUX', 'PART', 'PUNCT', 'SPACE', 'SYM')) %>%
+        subset(!pos %in% c('ADP', 'ADV', 'AUX', 'PART', 'PUNCT', 'SPACE', 'SYM', 'NUM')) %>%
         subset(!entity %in% c('PERCENT_I'))
         #subset(!pos %in% c('VERB', , 'X', 'NUM' 'ADV', 'PART',)) %>% 
   
@@ -102,6 +102,9 @@ docvars(cmv_dfm) <- docvars(cmv_text_corpus)
 stm_input <- convert(cmv_dfm, to = "stm")
 ```
 
+```{r}
+kwic(cmv_spacy_tokens %>% as.tokens(use_lemma = TRUE), pattern = "'", valuetype = "regex", window = 10)
+```
 
 
 ```{r}
@@ -141,16 +144,16 @@ plot(cmv_model)
 
 ```{r}
 # Wordclouds
-c1 <- cloud(cmv_model7, topic = 2, scale = c(2,.25))
-c2 <- cloud(cmv_model7, topic = 2, scale = c(2,.25))
-c3 <- cloud(cmv_model7, topic = 3, scale = c(2,.25))
-c4 <- cloud(cmv_model7, topic = 4, scale = c(2,.25))
-c5 <- cloud(cmv_model7, topic = 5, scale = c(2,.25))
-c6 <- cloud(cmv_model7, topic = 6, scale = c(2,.25))
-c7 <- cloud(cmv_model7, topic = 7, scale = c(2,.25))
-c8 <- cloud(cmv_model7, topic = 8, scale = c(2,.25))
-c9 <- cloud(cmv_model7, topic = 9, scale = c(2,.25))
-c10 <- cloud(cmv_model7, topic = 10, scale = c(2,.25))
+c1 <- cloud(cmv_model, topic = 2, scale = c(2,.25))
+c2 <- cloud(cmv_model, topic = 2, scale = c(2,.25))
+c3 <- cloud(cmv_model, topic = 3, scale = c(2,.25))
+c4 <- cloud(cmv_model, topic = 4, scale = c(2,.25))
+c5 <- cloud(cmv_model, topic = 5, scale = c(2,.25))
+c6 <- cloud(cmv_model, topic = 6, scale = c(2,.25))
+c7 <- cloud(cmv_model, topic = 7, scale = c(2,.25))
+c8 <- cloud(cmv_model, topic = 8, scale = c(2,.25))
+c9 <- cloud(cmv_model, topic = 9, scale = c(2,.25))
+c10 <- cloud(cmv_model, topic = 10, scale = c(2,.25))
 ```
 ```{r}
 # Get topic proportions for each document
