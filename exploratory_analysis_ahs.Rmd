@@ -1,0 +1,32 @@
+---
+title: "Exploratory Analysis of r/AgainstHateSubreddits"
+author: "Dulshani"
+date: "16/06/2021"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  cache = TRUE
+)
+
+library(arrow) # data retrieval from storage
+library(tidyverse) # dataframe manipulation
+```
+
+```{r}
+# No of total posts (post pre-processing)
+```
+
+```{r}
+# Vote and comment distribution of posts
+```
+
+```{r}
+# No of posts with a subreddit name
+```
+
+```{r}
+# Commonly mentioned subreddits
+```
+
