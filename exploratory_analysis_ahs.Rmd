@@ -12,18 +12,57 @@ knitr::opts_chunk$set(
 
 library(arrow) # data retrieval from storage
 library(tidyverse) # dataframe manipulation
+
+source('utility_functions.R')
+```
+
+```{r read_data}
+ahs <- read_reddit_data('AgainstHateSubreddits')
 ```
 
 ```{r}
-# No of total posts (post pre-processing)
+# No of total posts (before pre-processing)
+dim(ahs)
 ```
 
 ```{r}
-# Vote and comment distribution of posts
+ahs_preprocessed <- ahs %>%
+  filter(link_flair_text != 'Meta', selftext != '[removed]') %>% # Remove meta and deleted posts
+  mutate(derived_subreddit = factor(str_extract(str_to_lower(title), 'r\\/[a-z0-9_]+'))) %>%
+  filter(!is.na(derived_subreddit))
+dim(ahs_preprocessed)
+# This task could be done better by using word embeddings to identify the pattern, rather than by using regex.
+# Potential improvement for future 
+```
+
+```{r}
+ahs_preprocessed
+```
+
+
+
+```{r}
+head(ahs_preprocessed, 10)
+```
+
+```{r}
+sort(table(ahs_preprocessed$derived_subreddit), decreasing = T)
+# TODO: Graph with reported subreddits with number of posts
+# TODO: descriptions of selected subreddits
+```
+
+
+
+```{r fig.width = 15}
+# Post distribution over time
+ggplot(data = ahs_preprocessed, map = aes(x = derived_subreddit)) +
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 ```
 
 ```{r}
 # No of posts with a subreddit name
+
 ```
 
 ```{r}

@@ -19,16 +19,6 @@ spacy_initialize(model = "en_core_web_trf")
 ```
 
 ```{r}
-# Function to read in data from storage 
-read_reddit_data <- function(subreddit) {
-  path = paste0('data/', subreddit)
-  df <- read_feather(path)
-  return(df)
-}
-```
-
-
-```{r}
 cmv <- read_reddit_data('changemyview')
 head(cmv, 2)
 ```
