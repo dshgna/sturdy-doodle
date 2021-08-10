@@ -11,13 +11,15 @@ knitr::opts_chunk$set(
 )
 
 library(arrow) # data retrieval from storage
+library(ggrepel) # intelligent label placement
 library(tidyverse) # dataframe manipulation
 
 source('utility_functions.R')
 ```
 
+
 ```{r read_data}
-ahs <- read_reddit_data('AgainstHateSubreddits')
+ahs <- read_reddit_data('../data/AgainstHateSubreddits')
 ```
 
 ```{r}
@@ -27,30 +29,76 @@ dim(ahs)
 
 ```{r}
 ahs_preprocessed <- ahs %>%
-  filter(link_flair_text != 'Meta', selftext != '[removed]') %>% # Remove meta and deleted posts
-  mutate(derived_subreddit = factor(str_extract(str_to_lower(title), 'r\\/[a-z0-9_]+'))) %>%
-  filter(!is.na(derived_subreddit))
+  # Remove meta, bot and deleted posts
+  filter(link_flair_text != 'Meta', selftext != '[removed]', selftext != '[deleted]', author != 'AutoModerator') %>% 
+        # Try to derive subreddit from link_flair_text
+  mutate(derived_subreddit = str_extract(str_to_lower(link_flair_text), 'r\\/[a-z0-9_]+'), 
+        # If it fails, try to derive subreddit from link_flair_text
+         derived_subreddit = ifelse(is.na(derived_subreddit), 
+                                    str_extract(str_to_lower(title), 'r\\/[a-z0-9_]+'), 
+                                    derived_subreddit),
+        derived_subreddit = factor(derived_subreddit)) %>%
+  filter(!is.na(derived_subreddit), derived_subreddit != 'r/againsthatesubreddits') # Remove posts with no derived subreddits
+
 dim(ahs_preprocessed)
 # This task could be done better by using word embeddings to identify the pattern, rather than by using regex.
 # Potential improvement for future 
 ```
 
+
 ```{r}
-ahs_preprocessed
+head(ahs_preprocessed)
+```
+
+```{r}
+(derived_subreddit_count <- ahs_preprocessed %>%
+  group_by(derived_subreddit) %>%
+  summarise(n = n(), first_report = min(created_utc), last_report = max(created_utc)) %>%
+  mutate(time_difference = last_report - first_report + 1,
+         normalised_n = n/as.double(time_difference))  %>%
+ # arrange(derived_subreddit)
+  arrange(desc(n))
+ )
+```
+
+```{r}
+summary(derived_subreddit_count)
 ```
 
 
 
 ```{r}
-head(ahs_preprocessed, 10)
+# Histogram with number of reports for subreddits
+ggplot(data = derived_subreddit_count, map = aes(x = n)) +
+  geom_histogram(boundary = 0, bins = 20, fill = '#99a666', alpha = 0.4) +
+  scale_x_continuous(trans='sqrt') +
+  geom_point(data = subset(derived_subreddit_count, n > 100), 
+             aes(n, 1),
+             size = 1, 
+             shape = 20, 
+             color = '#96568b'
+             ) +
+  geom_text_repel(data = subset(derived_subreddit_count, n > 100),
+                color = "#96568b",
+                mapping = aes(x = n, y = 0, label = derived_subreddit),
+                size = 2.5,
+                max.overlaps = 100,
+                segment.size = 0.2,
+                box.padding = unit(0.2, "lines"),
+                segment.square  = TRUE,
+                segment.curvature = -0.1,
+                nudge_x = .15,
+    nudge_y = 1,
+    segment.ncp = 3,
+    segment.angle = 20
+                ) +
+  labs(title = "Subreddit Hate Report Distribution", x = "# Reports", y = "# Subreddits") +
+  theme_minimal()
 ```
 
 ```{r}
-sort(table(ahs_preprocessed$derived_subreddit), decreasing = T)
-# TODO: Graph with reported subreddits with number of posts
-# TODO: descriptions of selected subreddits
-```
 
+```
 
 
 ```{r fig.width = 15}
@@ -67,5 +115,8 @@ ggplot(data = ahs_preprocessed, map = aes(x = derived_subreddit)) +
 
 ```{r}
 # Commonly mentioned subreddits
+sort(table(ahs_preprocessed$derived_subreddit), decreasing = T)
+
+# TODO: descriptions of selected subreddits
 ```
 
