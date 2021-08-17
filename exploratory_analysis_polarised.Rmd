@@ -1,5 +1,5 @@
 ---
-title: "Exploratory Analysis of CMV"
+title: "Exploratory Analysis of "
 author: "Dulshani"
 date: "16/06/2021"
 output: html_document
@@ -22,17 +22,25 @@ source('utility_functions.R')
 
 
 ```{r read_data}
-cmv <- read_reddit_data('changemyview')
+subreddits = list('GenderCritical', 'MGTOW', 'MGTOW2', 'conservative', 'conspiracy', 'cringeanarchy', 'metacanada')
+```
+
+```{r}
+combined <- read_reddit_data('changemyview') %>%
+  select(-c('link_flair_text', 'upvote_ratio'))
+
+for (subreddit in subreddits) {
+  print(subreddit)
+  subreddit_df <- read_reddit_data(subreddit) %>%
+    select_if(!names(.) %in% c('link_flair_text', 'upvote_ratio'))
+  combined <- union(combined, subreddit_df)
+}
+```
+
+```{r}
 # Preprocess data
-cmv_pp <- pre_process_post_data(cmv)
-```
-
-```{r}
-
-```
-
-```{r}
-
+combined_preprocessed <- pre_process_post_data(combined) %>%
+  mutate(post_length = str_count(selftext, '\\s+') + 1)
 ```
 
 ```{r}
