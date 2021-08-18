@@ -7,6 +7,14 @@ read_reddit_data <- function(subreddit_name) {
   return(df)
 }
 
+# Function to perform common pre-processing functions across the posts dataset
+pre_process_post_data <- function(subreddit_df) {
+  preprocessed_df <- subreddit_df %>%
+    # Remove bot, user deleted and moderator deleted posts
+    filter(selftext != '[removed]', selftext != '[deleted]', author != 'AutoModerator') %>% 
+  return(preprocessed_df)
+}
+
 
 # Find tokens which have over a given no of characters
 # cmv_spacy_tokens %>%

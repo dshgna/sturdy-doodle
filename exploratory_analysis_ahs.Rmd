@@ -11,6 +11,7 @@ knitr::opts_chunk$set(
 )
 
 library(arrow) # data retrieval from storage
+library(gridExtra) # combine multiple plots
 library(ggrepel) # intelligent label placement
 library(tidyverse) # dataframe manipulation
 
@@ -19,7 +20,7 @@ source('utility_functions.R')
 
 
 ```{r read_data}
-ahs <- read_reddit_data('../data/AgainstHateSubreddits')
+ahs <- read_reddit_data('AgainstHateSubreddits')
 ```
 
 ```{r}
@@ -37,8 +38,12 @@ ahs_preprocessed <- ahs %>%
          derived_subreddit = ifelse(is.na(derived_subreddit), 
                                     str_extract(str_to_lower(title), 'r\\/[a-z0-9_]+'), 
                                     derived_subreddit),
-        derived_subreddit = factor(derived_subreddit)) %>%
-  filter(!is.na(derived_subreddit), derived_subreddit != 'r/againsthatesubreddits') # Remove posts with no derived subreddits
+        derived_subreddit = str_replace(derived_subreddit, 'r\\/', ''),
+        derived_subreddit = str_replace(derived_subreddit, 'fds', 'femaledatingstrategy')
+        #derived_subreddit = factor(derived_subreddit)
+        ) %>%
+  filter(!is.na(derived_subreddit), derived_subreddit != 'r/againsthatesubreddits') %>% # Remove posts with no derived subreddits
+  filter(created_utc >= '2018-04-01' & created_utc <= '2021-04-30')
 
 dim(ahs_preprocessed)
 # This task could be done better by using word embeddings to identify the pattern, rather than by using regex.
@@ -53,13 +58,19 @@ head(ahs_preprocessed)
 ```{r}
 (derived_subreddit_count <- ahs_preprocessed %>%
   group_by(derived_subreddit) %>%
-  summarise(n = n(), first_report = min(created_utc), last_report = max(created_utc)) %>%
+  summarise(n = n(), first_report = min(created_utc), last_report = max(created_utc), total_score = sum(score)) %>%
   mutate(time_difference = last_report - first_report + 1,
          normalised_n = n/as.double(time_difference))  %>%
  # arrange(derived_subreddit)
-  arrange(desc(n))
+  arrange(desc(total_score))
  )
 ```
+
+```{r}
+length(derived_subreddit_count$derived_subreddit)
+```
+
+
 
 ```{r}
 summary(derived_subreddit_count)
@@ -69,54 +80,60 @@ summary(derived_subreddit_count)
 
 ```{r}
 # Histogram with number of reports for subreddits
-ggplot(data = derived_subreddit_count, map = aes(x = n)) +
-  geom_histogram(boundary = 0, bins = 20, fill = '#99a666', alpha = 0.4) +
-  scale_x_continuous(trans='sqrt') +
-  geom_point(data = subset(derived_subreddit_count, n > 100), 
+p1 <- ggplot(data = derived_subreddit_count, map = aes(x = n)) +
+  scale_x_continuous(trans = 'log10') +
+  geom_histogram(boundary = 0, bins = 10, fill = '#99a666', alpha = 0.5) +
+  geom_point(data = subset(derived_subreddit_count, n > 25), 
              aes(n, 1),
              size = 1, 
              shape = 20, 
              color = '#96568b'
              ) +
-  geom_text_repel(data = subset(derived_subreddit_count, n > 100),
+  geom_text_repel(data = subset(derived_subreddit_count, n > 25),
                 color = "#96568b",
                 mapping = aes(x = n, y = 0, label = derived_subreddit),
-                size = 2.5,
-                max.overlaps = 100,
+                size = 3,
+                force_pull   = 0, 
+                nudge_y      = 200,
+                direction    = "x",
+                angle        = 90,
+                hjust        = 0,
                 segment.size = 0.2,
-                box.padding = unit(0.2, "lines"),
-                segment.square  = TRUE,
-                segment.curvature = -0.1,
-                nudge_x = .15,
-    nudge_y = 1,
-    segment.ncp = 3,
-    segment.angle = 20
+                max.iter = 1e4, 
+                max.time = 1
                 ) +
-  labs(title = "Subreddit Hate Report Distribution", x = "# Reports", y = "# Subreddits") +
+  labs(title = "Post Distribution", x = "# Posts", y = "# Subreddits") +
   theme_minimal()
 ```
 
 ```{r}
-
+# Histogram with total score for subreddits
+p2 <- ggplot(data = derived_subreddit_count, map = aes(x = total_score)) +
+  geom_histogram(boundary = 0, bins = 20, fill = '#99a666', alpha = 0.5) +
+  scale_x_continuous(trans = 'sqrt') +
+  geom_point(data = subset(derived_subreddit_count, total_score > 10000), 
+             aes(total_score, 1),
+             size = 1, 
+             shape = 20, 
+             color = '#96568b'
+             ) +
+  geom_text_repel(data = subset(derived_subreddit_count, total_score > 10000),
+                color = "#96568b",
+                mapping = aes(x = total_score, y = 0, label = derived_subreddit),
+                size = 3,
+                force_pull   = 0, 
+                nudge_y      = 200,
+                direction    = "x",
+                angle        = 90,
+                hjust        = 0,
+                segment.size = 0.2,
+                max.iter = 1e4, 
+                max.time = 1
+                ) +
+  labs(title = "Total Score Distribution", x = "Total Score (Upvotes - Downvotes) across all Reports", y = "# Subreddits") +
+  theme_minimal()
 ```
 
-
-```{r fig.width = 15}
-# Post distribution over time
-ggplot(data = ahs_preprocessed, map = aes(x = derived_subreddit)) +
-  geom_bar() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```{r fig.height = 7}
+grid.arrange(p1, p2, nrow = 2)
 ```
-
-```{r}
-# No of posts with a subreddit name
-
-```
-
-```{r}
-# Commonly mentioned subreddits
-sort(table(ahs_preprocessed$derived_subreddit), decreasing = T)
-
-# TODO: descriptions of selected subreddits
-```
-
