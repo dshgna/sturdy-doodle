@@ -1,10 +1,18 @@
 # Contains functions used regularly throughout the project.
 
 # Function to read in data from storage 
+# ENSURE that the GCSFUSE disk is mounted first.
 read_reddit_data <- function(subreddit_name) {
   path = paste0('../data/', subreddit_name)
   df <- read_feather(path)
   return(df)
+}
+
+# Function to write data into storage 
+write_reddit_data <- function(df, file_name) {
+  path = paste0('../data/', file_name)
+  df <- write_feather(df, path)
+  print('Dataframe saved to disk')
 }
 
 # Function to perform common pre-processing functions across the posts dataset
@@ -14,6 +22,7 @@ pre_process_post_data <- function(subreddit_df) {
     filter(selftext != '[removed]', selftext != '[deleted]', author != 'AutoModerator') %>% 
   return(preprocessed_df)
 }
+
 
 
 # Find tokens which have over a given no of characters

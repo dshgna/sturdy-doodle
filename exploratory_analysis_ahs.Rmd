@@ -171,4 +171,3 @@ ggplot(report_reason, aes(derived_subreddit, link_flair_text, fill = n)) +
   scale_fill_gradient(low = "#dfecd1", high = "#0b383b") +
   scale_x_discrete(labels = subreddit_names)
 ```
-

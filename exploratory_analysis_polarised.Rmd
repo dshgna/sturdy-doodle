@@ -1,5 +1,5 @@
 ---
-title: "Exploratory Analysis of "
+title: "Exploratory Analysis of Polarised Subreddits"
 author: "Dulshani"
 date: "16/06/2021"
 output: html_document
@@ -182,7 +182,7 @@ grid.arrange(p1, p2, p3, ncol = 1)
 
 
 ```{r}
-# TODO: Save pre-processed dataset
-
+# Save pre-processed dataset to disk
+write_reddit_data(combined_preprocessed, 'combined_preprocessed')
 ```
 
