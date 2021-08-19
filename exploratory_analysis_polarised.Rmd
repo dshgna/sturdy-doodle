@@ -13,6 +13,7 @@ knitr::opts_chunk$set(
 library(arrow) # data retrieval from storage
 library(ggrepel) # intelligent label placement
 library(gridExtra) # combine multiple plots
+library(scales) # Transformations
 library(tidyverse) # dataframe manipulation
 library(quanteda)
 library(quanteda.textstats)
@@ -28,8 +29,9 @@ options(arrow.skip_nul = TRUE)
 subreddits <- list(dir('../data'))[[1]]
 #subreddits = list('GenderCritical', 'MGTOW', 'MGTOW2', 'conservative', 'conspiracy', 'cringeanarchy', 'metacanada')
 
-# Remove AHS
+# Remove AHS and combined
 subreddits <- subreddits[-which(subreddits == 'AgainstHateSubreddits')]
+subreddits <- subreddits[-which(subreddits == 'combined_preprocessed')]
 
 # Combine data into one large dataframe
 combined <- as.data.frame(matrix(ncol = 8))
@@ -68,15 +70,15 @@ dim(combined_preprocessed)
 # 2545803  
 ```
 
-```{r subreddit_preprocess}
-# Add subreddit specific pre-processing steps
+```{r}
+head(combined_preprocessed, 40)
 ```
 
-
-```{r text_stat_summary}
-# Quanteda Text Stat Summary
-  #mutate(post_length = str_count(selftext, '\\s+') + 1)
+```{r}
+# Save pre-processed dataset to disk
+write_reddit_data(combined_preprocessed, 'combined_preprocessed')
 ```
+
 
 ```{r}
 (combined_summary <- combined_preprocessed %>%
@@ -84,8 +86,6 @@ dim(combined_preprocessed)
   summarise(num_posts = n(),
             median_score = median(score),
             median_comments = median(num_comments)
-            #,
-            #median_post_length = median(post_length)
             ) %>%
    mutate(subreddit = factor(subreddit, levels = c("changemyview", "AltRightChristian", "Anarcho_Capitalism", "askaconservative",     "averageredditor", "Chodi", "Conservative", "conspiracy", "CringeAnarchy", "donaldtrump", "FemaleDatingStrategy", "GenderCritical", "metacanada", "MGTOW", "MGTOW2", "milliondollarextreme", "ProtectAndServe", "The_Donald", "tucker_carlson","unpopularopinion")))
 )
@@ -120,6 +120,18 @@ color_palette <- c("#d73d64",
           "#e07e88")
 ```
 
+```{r custom_transformations}
+#Create a transformation for cubed root
+cube_root <- function(x) x ^ (1/3)
+cube <- function(x) x ^ 3
+
+trans_cube <- trans_new(name = "cube root",
+                        transform = cube_root,
+                        inverse = cube)
+```
+
+
+
 ```{r descriptive_statistics}
 # Number of Posts
 p1 <- ggplot(combined_preprocessed, aes(x = subreddit, fill = subreddit)) +
@@ -133,56 +145,65 @@ p1 <- ggplot(combined_preprocessed, aes(x = subreddit, fill = subreddit)) +
         scale_x_discrete(labels = subreddit_names) +
         scale_y_continuous(trans = 'sqrt')
 
-# Post Length
-# p1 <- combined_preprocessed %>%
-#   ggplot( aes(x = subreddit, y = post_length, fill = subreddit)) +
-#     geom_violin() +
-#     scale_y_continuous(trans = 'sqrt') +
-#     theme_minimal() +
-#     theme(
-#       legend.position="none",
-#       plot.title = element_text(size=11),
-#       axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
-#     ) +
- #    ggtitle("Post Length") +
- #    xlab("") +
- #    ylab("")
-
 # Number of Comments
 p2 <- ggplot(combined_preprocessed, aes(x = subreddit, y = num_comments, fill = subreddit)) +
         geom_violin(alpha = 0.6) +
-        scale_y_continuous(trans = 'sqrt') +
         theme_minimal() +
         theme(
           legend.position="none",
           plot.title = element_text(size = 11),
-          axis.text.x = element_blank()
-        ) +
+          axis.text.x = element_blank()) +
         labs(title = "Comments per Post", x = "", y = "") +
-        scale_x_discrete(labels = subreddit_names)
+        scale_x_discrete(labels = subreddit_names) +
+        coord_trans(y = trans_cube)
 
 # Score
 p3 <- combined_preprocessed %>%
   ggplot( aes(x = subreddit, y = score, fill = subreddit)) +
     geom_violin(alpha = 0.6) +
-    scale_y_continuous(trans = 'sqrt') +
     theme_minimal() +
     theme(
       legend.position="none",
       plot.title = element_text(size = 11),
       axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
     labs(title = "Score per Post", x = "", y = "") +
-    scale_x_discrete(labels = subreddit_names)
-```
-
-
-```{r fig.height = 10}
-grid.arrange(p1, p2, p3, ncol = 1)
+    scale_x_discrete(labels = subreddit_names) +
+    coord_trans(y = trans_cube)
 ```
 
 
 ```{r}
-# Save pre-processed dataset to disk
-write_reddit_data(combined_preprocessed, 'combined_preprocessed')
+# Create corpus
+(combined_text_corpus <- corpus(combined_preprocessed, text_field = 'selftext'))
 ```
 
+
+```{r text_stat_summary}
+# Quanteda Test stat summary
+(combined_text_summary <- textstat_summary(combined_text_corpus))
+```
+
+
+```{r}
+(combined_text_summary_with_summary <- cbind(subreddit = combined_preprocessed$subreddit, combined_text_summary))
+```
+
+```{r}
+# Tokens per Post
+p4 <- combined_text_summary_with_summary %>%
+  ggplot( aes(x = subreddit, y = tokens, fill = subreddit)) +
+    geom_violin(alpha = 0.6) +
+    theme_minimal() +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(size = 11),
+            axis.text.x = element_blank()) +
+    labs(title = "Words per Post", x = "", y = "") +
+    scale_x_discrete(labels = subreddit_names) +
+   # scale_y_continuous(trans = 'sqrt')
+  coord_trans(y = trans_cube)
+```
+
+```{r fig.height = 15}
+grid.arrange(p1, p4, p2, p3, ncol = 1)
+```
