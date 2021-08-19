@@ -10,53 +10,120 @@ knitr::opts_chunk$set(
 
 library(arrow) # data retrieval from storage
 library(quanteda) # general purpose text analysis
+library(quanteda.textstats) # descriptive statistics for text
 library(spacyr) # lemmatisation, pos tagging
 library(stm) # topic models
 library(tidyverse) # dataframe manipulation
 library(wordcloud) # wordcloud visualization
 
-spacy_initialize(model = "en_core_web_trf")
+#spacy_initialize(model = "en_core_web_trf")
+source('utility_functions.R')
 ```
 
 ```{r}
-cmv <- read_reddit_data('changemyview')
-head(cmv, 2)
+main_df <- read_reddit_data('combined_preprocessed')
+head(main_df, 2)
 ```
+
+```{r}
+dim(main_df)
+```
+
 
 ```{r}
 # Pre-processing before tokenizing
-# Combine the title and post text
+
 # Remove URLS and zero-width spaces &#x200B
 url_pattern <- "[(]?http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
 zero_width_space_pattern <- "&#x200(b|B)"
+replace_characters <- "(&amp; | \n\ | \\[ )"
+replace_title_word_list <- "cmv"
 
-cmv <- cmv %>%
-  mutate(text_with_title = paste(title, selftext)) %>%
-  select(!c("selftext")) %>%
-  mutate(text_with_title = str_replace_all(text_with_title, url_pattern, ''),
-         text_with_title = str_replace_all(text_with_title, zero_width_space_pattern, ''))
+main_df_pp <- main_df %>%
+    mutate(
+        selftext = tolower(selftext),
+        title = tolower(title),
+        selftext = str_replace_all(selftext, url_pattern, ''), 
+        selftext = str_replace_all(selftext, zero_width_space_pattern, ''),
+        selftext = str_replace_all(selftext, replace_characters, ''),
+        title = str_replace_all(title, replace_title_word_list, '')
+    ) %>%
+    filter(selftext != '') %>% 
+    mutate(text_with_title = paste(title, selftext)) 
+#%>%
+#    select(!c("selftext")) 
+
+dim(main_df_pp)
 ```
 
 ```{r}
-head(cmv, 2)
+# Create corpus
+main_text_corpus <- corpus(main_df_pp, text_field = 'text_with_title')
+
+# Quanteda Test stat summary
+main_text_summary <- textstat_summary(main_text_corpus)
+
+# Combine text summary with df
+(main_text_with_summary <- cbind(subreddit = main_df_pp$subreddit, main_text_summary))
 ```
+
+
+
+```{r}
+# View samples from each subreddit to identify what to preprocess
+subreddits <- unique(main_df_pp$subreddit)
+for (s in subreddits) {
+    subreddit_df <- main_df_pp %>%
+        filter(subreddit == s) %>%
+        select(title, selftext)
+    print(head(subreddit_df))
+} 
+```
+
+```{r}
+# Updated Descriptive statistics after pre-processing
+
+# Number of Posts
+p1_pp <- ggplot(main_df_pp, aes(x = subreddit, fill = subreddit)) +
+        geom_bar(alpha = 0.6) +
+        labs(title = "Number of Posts", x = "", y = "") +
+        theme_minimal() +
+        theme(legend.position = "none", 
+              plot.title = element_text(size=11), 
+              axis.text.x = element_blank()) +
+        scale_fill_manual(values = color_palette) +
+        scale_x_discrete(labels = subreddit_names) +
+        scale_y_continuous(trans = 'sqrt')
+
+# Tokens per Post
+p2_pp <- main_text_with_summary %>%
+  ggplot( aes(x = subreddit, y = tokens, fill = subreddit)) +
+    geom_violin(alpha = 0.6) +
+    theme_minimal() +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(size = 11),
+            axis.text.x = element_blank()) +
+    labs(title = "Words per Post", x = "", y = "") +
+    scale_x_discrete(labels = subreddit_names) +
+   # scale_y_continuous(trans = 'sqrt')
+  coord_trans(y = trans_cube)
+```
+
+```{r fig.height = 15}
+grid.arrange(p1_pp, p2_pp, ncol = 1)
+```
+
+
+
+
 
 ```{r}
 #rd_posts <- rd[!duplicated(rd$post_text),] %>%
 #  mutate(complete_text = str_replace_all(paste(title, post_text), "\031", "'"))
 ```
 
-```{r}
-# Create a corpus from the text of posts 
-(cmv_text_corpus <- corpus(cmv, text_field = 'text_with_title'))
-```
 
-
-
-
-```{r}
-(cmv_text_summary <- textstat_summary(corpus(cmv_url, text_field = 'full_text')))
-```
 
 ```{r}
 # TODO: Differentiate adverbs of manner

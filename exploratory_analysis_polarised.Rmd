@@ -91,47 +91,6 @@ write_reddit_data(combined_preprocessed, 'combined_preprocessed')
 )
 ```
 
-```{r}
-# Labels for graphs
-subreddit_names <- c("ChangeMyView", "AltRightChristian", "Anarcho_Capitalism", "AskAConservative", "AverageRedditor", "Chodi", 
-                      "Conservative", "Conspiracy", "CringeAnarchy", "DonaldTrump",  "FemaleDatingStrategy", "GenderCritical", 
-                      "MetaCanada", "MGTOW", "MGTOW2", "MillionDollarExtreme", "ProtectAndServe", "The_Donald", "Tucker_Carlson","UnpopularOpinion")
-
-# Color palette for graphs
-color_palette <- c("#d73d64",
-          "#70be49",
-          "#cb72e1",
-          "#589646",
-          "#5f6bda",
-          "#d89b31",
-          "#8b4aac",
-          "#b2b050",
-          "#cf469f",
-          "#59c39e",
-          "#d35631",
-          "#4eacd7",
-          "#a1493d",
-          "#378562",
-          "#cd8bc9",
-          "#756f29",
-          "#6b7ec4",
-          "#c88651",
-          "#9d4b76",
-          "#e07e88")
-```
-
-```{r custom_transformations}
-#Create a transformation for cubed root
-cube_root <- function(x) x ^ (1/3)
-cube <- function(x) x ^ 3
-
-trans_cube <- trans_new(name = "cube root",
-                        transform = cube_root,
-                        inverse = cube)
-```
-
-
-
 ```{r descriptive_statistics}
 # Number of Posts
 p1 <- ggplot(combined_preprocessed, aes(x = subreddit, fill = subreddit)) +
