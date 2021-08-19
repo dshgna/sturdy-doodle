@@ -1,6 +1,7 @@
 # Contains variables functions used regularly throughout the project.
 
 # LOAD LIBRARIES
+library(gridExtra) # combine multiple plots
 library(scales) # Transformations
 
 

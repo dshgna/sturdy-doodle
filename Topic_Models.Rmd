@@ -56,13 +56,19 @@ main_df_pp <- main_df %>%
 dim(main_df_pp)
 ```
 
-```{r}
+```{r create_corpus}
 # Create corpus
-main_text_corpus <- corpus(main_df_pp, text_field = 'text_with_title')
+(main_text_corpus <- corpus(main_df_pp, text_field = 'text_with_title'))
+```
 
+
+```{r text_stat_summary}
 # Quanteda Test stat summary
 main_text_summary <- textstat_summary(main_text_corpus)
+```
 
+
+```{r combine_summary_subreddit}
 # Combine text summary with df
 (main_text_with_summary <- cbind(subreddit = main_df_pp$subreddit, main_text_summary))
 ```
@@ -93,7 +99,7 @@ p1_pp <- ggplot(main_df_pp, aes(x = subreddit, fill = subreddit)) +
               axis.text.x = element_blank()) +
         scale_fill_manual(values = color_palette) +
         scale_x_discrete(labels = subreddit_names) +
-        scale_y_continuous(trans = 'sqrt')
+        scale_y_continuous(trans = 'sqrt', labels = comma)
 
 # Tokens per Post
 p2_pp <- main_text_with_summary %>%
@@ -103,14 +109,14 @@ p2_pp <- main_text_with_summary %>%
     theme(
       legend.position = "none",
       plot.title = element_text(size = 11),
-            axis.text.x = element_blank()) +
+            axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
     labs(title = "Words per Post", x = "", y = "") +
     scale_x_discrete(labels = subreddit_names) +
-   # scale_y_continuous(trans = 'sqrt')
-  coord_trans(y = trans_cube)
+    scale_y_continuous(trans = 'sqrt')
+  #coord_trans(y = trans_cube)
 ```
 
-```{r fig.height = 15}
+```{r fig.height = 10}
 grid.arrange(p1_pp, p2_pp, ncol = 1)
 ```
 
@@ -130,7 +136,7 @@ grid.arrange(p1_pp, p2_pp, ncol = 1)
 # Tokenize corpus
 # pre-processing steps after tokenizing
 # lemmatization, removal of noisy POS tags (e.g. PUNCT), stopword removal, ngram detection, removal of urls
-cmv_spacy_tokens <- spacy_parse(cmv_text_corpus) %>% 
+cmv_spacy_tokens <- spacy_parse(main_text_corpus) %>% 
         subset(!pos %in% c('ADP', 'ADV', 'AUX', 'PART', 'PUNCT', 'SPACE', 'SYM', 'NUM')) %>%
         subset(!entity %in% c('PERCENT_I'))
         #subset(!pos %in% c('VERB', , 'X', 'NUM' 'ADV', 'PART',)) %>% 
@@ -167,11 +173,13 @@ kwic(cmv_spacy_tokens %>% as.tokens(use_lemma = TRUE), pattern = "'", valuetype 
 ```{r}
 # Choose a number of appropriate topics
 k_search_output <- searchK(stm_input$documents, 
-                         stm_input$vocab,
-                         K = c(3:50), 
-                         data = stm_input$meta,
-                         heldout.seed = 123, 
-                         verbose = FALSE)
+                        stm_input$vocab,
+                        K = c(10:100), 
+                        prevalence = ~ subreddit,
+                        content = ~ subreddit, 
+                        data = stm_input$meta,
+                        heldout.seed = 123, 
+                        verbose = TRUE)
 
 plot(k_search_output)
 ```
@@ -182,7 +190,7 @@ k_search_output
 ```
 
 ```{r}
-# Plot exclusion
+# TODO: Plot exclusion measure
 plot(k_search_output$K, )
 ```
 
