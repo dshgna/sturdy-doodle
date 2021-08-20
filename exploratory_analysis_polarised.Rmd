@@ -113,6 +113,7 @@ p2 <- ggplot(combined_preprocessed, aes(x = subreddit, y = num_comments, fill = 
           plot.title = element_text(size = 11),
           axis.text.x = element_blank()) +
         labs(title = "Comments per Post", x = "", y = "") +
+        scale_fill_manual(values = color_palette) +
         scale_x_discrete(labels = subreddit_names) +
         coord_trans(y = trans_cube)
 
@@ -126,6 +127,7 @@ p3 <- combined_preprocessed %>%
       plot.title = element_text(size = 11),
       axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
     labs(title = "Score per Post", x = "", y = "") +
+    scale_fill_manual(values = color_palette) +
     scale_x_discrete(labels = subreddit_names) +
     coord_trans(y = trans_cube)
 ```
@@ -158,6 +160,7 @@ p4 <- combined_text_summary_with_summary %>%
       plot.title = element_text(size = 11),
             axis.text.x = element_blank()) +
     labs(title = "Words per Post", x = "", y = "") +
+  scale_fill_manual(values = color_palette) +
     scale_x_discrete(labels = subreddit_names) +
    # scale_y_continuous(trans = 'sqrt')
   coord_trans(y = trans_cube)

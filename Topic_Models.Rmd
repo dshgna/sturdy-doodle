@@ -19,6 +19,8 @@ library(tidyverse) # dataframe manipulation
 library(wordcloud) # wordcloud visualization
 
 source('utility_functions.R')
+
+set.seed(123)
 ```
 
 ```{r}
@@ -74,9 +76,9 @@ subreddits <- unique(main_df_pp$subreddit)
 
 tic()
 
-map(subreddits, function(subreddit) { ## only need to swap `lapply` for `map`
+map(subreddits, function(s) { ## only need to swap `lapply` for `map`
     subreddit_df <- main_df_pp %>%
-        filter(subreddit == subreddit) %>%
+        filter(subreddit == s) %>%
         select(text_with_title)
    return(head(subreddit_df))
 })
@@ -92,7 +94,7 @@ toc()
 # Number of Posts
 p1_pp <- ggplot(main_df_pp, aes(x = subreddit, fill = subreddit)) +
         geom_bar(alpha = 0.6) +
-        labs(title = "Number of Posts", x = "", y = "") +library(quanteda)
+        labs(title = "Number of Posts", x = "", y = "") +
         theme_minimal() +
         theme(legend.position = "none", 
               plot.title = element_text(size=11), 
@@ -111,6 +113,7 @@ p2_pp <- main_text_summary %>%
       plot.title = element_text(size = 11),
             axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
     labs(title = "Words per Post", x = "", y = "") +
+    scale_fill_manual(values = color_palette) +
     scale_x_discrete(labels = subreddit_names) +
     scale_y_continuous(trans = 'sqrt')
   #coord_trans(y = trans_cube)
@@ -120,72 +123,148 @@ p2_pp <- main_text_summary %>%
 grid.arrange(p1_pp, p2_pp, ncol = 1)
 ```
 
-
+```{r}
+subreddits <- unique(main_df_pp$subreddit)
+```
 
 ```{r}
 # Function to parse one batch of tokens
 batch_token_parse <- function(s) {
     print(s)
     # Subset corpus
-    s_corpus <- corpus_subset(main_text_corpus, subreddit == s)
-    cmv_spacy_tokens <- spacy_parse(s_corpus) %>% 
-        subset(!pos %in% c('ADP', 'ADV', 'AUX', 'PART', 'PUNCT', 'SPACE', 'SYM', 'NUM')) %>%
+    if(s == 'unpopularopinion') {
+        # Given the large size of unpopularopinion, randomly sample 70000 documents
+        s_corpus <- corpus_subset(main_text_corpus, subreddit == s)
+        s_corpus <- corpus_sample(s_corpus, size = 70000)
+    } else {
+        s_corpus <- corpus_subset(main_text_corpus, subreddit == s)
+    }
+  
+    # Tokenise and remove noisy POS tags (e.g. PUNCT)
+    spacy_tokens <- spacy_parse(s_corpus) %>% 
+        subset(!pos %in% c('ADP', 'ADV', 'AUX', 'PART', 'PUNCT', 'SPACE', 'SYM', 'NUM')) %>% # lemmatization, removal of n
         subset(!entity %in% c('PERCENT_I'))
-   return(cmv_spacy_tokens)
+   return(spacy_tokens)
+  
+  # TODO Maybe: subset(!pos %in% c('VERB', , 'X', 'NUM' 'ADV', 'PART',)) %>%
+  # TODO Wishlist: Differentiate adverbs of manner
 }
 
-# Memoise for caching
+# Memoise for caching for each function call
 batch_token_parse <- memoise(batch_token_parse)
 
 tic()
 # Batch parse all tokens
-all_tokens <- map(subreddits[1:2], batch_token_parse)
+all_tokens <- map(subreddits, batch_token_parse)
 toc()
 ```
 
 
-
-
-
-```{r}
-# TODO: Differentiate adverbs of manner
-# Tokenize corpus
-# pre-processing steps after tokenizing
-# lemmatization, removal of noisy POS tags (e.g. PUNCT), stopword removal, ngram detection, removal of urls
-cmv_spacy_tokens <- spacy_parse(main_text_corpus) %>% 
-        subset(!pos %in% c('ADP', 'ADV', 'AUX', 'PART', 'PUNCT', 'SPACE', 'SYM', 'NUM')) %>%
-        subset(!entity %in% c('PERCENT_I'))
-        #subset(!pos %in% c('VERB', , 'X', 'NUM' 'ADV', 'PART',)) %>%
+```{r save_tokens}
+# Save extracted tokens
+saveRDS(all_tokens, file = "../data/all_tokens.rds")
 ```
 
 
 ```{r}
+all_tokens
+```
+```{r read_tokens}
+all_tokens <- readRDS(file = "../data/all_tokens.rds")
+```
+
+
+```{r}
+# Combine token outputs from batch processing together
+spacy_tokens <- bind_rows(all_tokens)
+```
+
+```{r}
+spacy_tokens
+```
+
+
+
+```{r}
 # Convert from Spacy to Quanteda
-(cmv_text_tokens <- cmv_spacy_tokens %>%
-        as.tokens(use_lemma = TRUE) %>%
-        #tokens_remove(pattern = c("amp;"), valuetype = "regex", padding = TRUE) %>% 
-        tokens_remove(pattern = c("_"), valuetype = "fixed", padding = TRUE) %>% 
-        tokens_remove(stopwords("en"), padding = TRUE) %>%
-        tokens_ngrams(n = 1:2) 
-        #tokens_remove(pattern = c("?"), padding = TRUE) # Remove single character tokens)
+(cc_text_tokens <- spacy_tokens %>%
+        as.tokens(use_lemma = TRUE) %>% # Lemmatisation
+        tokens_remove(stopwords("en"), padding = TRUE) %>% # stopword removal
+        tokens_keep(min_nchar = 2) # Remove single character tokens)
  )
+```
+
+
+```{r save_parsed_tokens}
+# Save parsed tokens
+saveRDS(cc_text_tokens, file = "../data/parsed_tokens.rds")
+```
+
+```{r read_parsed_tokens}
+cc_text_tokens <- readRDS(file = "../data/parsed_tokens.rds")
+```
+
+
+```{r collocations}
+# Identify collocations
+(talk_collocations <- cc_text_tokens %>% 
+                  textstat_collocations(min_count = 1000, size = 2:3))
 ```
 
 
 ```{r}
 # Create document feature matrix
+# Compound collocations
 # Trim dfm to remove features that appear less than 5 times in the corpus 
-# and those that appear in more than 90% of the documents
-(cmv_dfm <- cmv_text_tokens %>%
+# and those that appear in more than 70% of the documents
+
+(cc_dfm <- cc_text_tokens %>%
+        tokens_compound(pattern = talk_collocations[talk_collocations$z > 150]) %>%
         dfm() %>%
         dfm_trim(min_termfreq = 5, max_docfreq = 0.7, docfreq_type = 'prop')
-)
+)   
+```
 
+
+```{r}
+# Find out dropped documents when pre-processing and converted to dfm
+cp <- docnames(main_text_corpus)
+d <- docnames(cc_dfm)
+(retained <- cp[(cp %in% d)])
+```
+
+```{r}
+#corpus_docvars <- docvars(blasphemy_corpus, 'region')#[-6026]
+```
+
+
+
+```{r}
 # Spacy removes the docvars - re-attach docvars from the initial corpus
-docvars(cmv_dfm) <- docvars(cmv_text_corpus)
+docvars(cc_dfm) <- docvars(retained)
+```
 
+
+
+
+```{r}
+
+```
+
+
+```{r}
 # Convert dfm into a format suitable for STM input
-stm_input <- convert(cmv_dfm, to = "stm")
+stm_input <- convert(cc_dfm, to = "stm")
+```
+
+
+```{r save_stm_input}
+# Save STM input
+saveRDS(stm_input, file = "../data/stm_input.rds")
+```
+
+```{r read_stm_input}
+stm_input <- readRDS(file = "../data/stm_input.rds")
 ```
 
 ```{r}
@@ -227,7 +306,7 @@ plot(cmv_model)
 
 ```{r}
 # Explore tokens in a document
-kwic(cmv_spacy_tokens %>% as.tokens(use_lemma = TRUE), pattern = "'", valuetype = "regex", window = 10)
+#kwic(cmv_spacy_tokens %>% as.tokens(use_lemma = TRUE), pattern = "'", valuetype = "regex", window = 10)
 ```
 
 
