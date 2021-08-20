@@ -137,3 +137,37 @@ p2 <- ggplot(data = derived_subreddit_count, map = aes(x = total_score)) +
 ```{r fig.height = 7}
 grid.arrange(p1, p2, nrow = 2)
 ```
+
+
+
+
+```{r}
+# Main report reasons for selected subreddits
+selected_subreddits <- derived_subreddit_count %>%
+  filter(total_score > 10000)
+
+report_reason <- ahs_preprocessed %>%
+  filter(derived_subreddit %in% selected_subreddits$derived_subreddit,
+         !str_count(str_to_lower(link_flair_text), 'r\\/[a-z0-9_]+') > 0,
+         !link_flair_text %in% c("removed - repost, see sticky", "🦀 Hate Sub Banned 🦀", "SPLC REPORT", "removed", "Brigaded by Unpopular Opinion.", "", "🚨 Ban Evasion Sub 🚨",
+                                 "Other", "Food for Thoughts")
+         ) %>%
+  group_by(derived_subreddit, link_flair_text) %>%
+  summarise(n = n()) 
+
+unique(report_reason$link_flair_text)
+```
+```{r fig.height = 5}
+subreddit_names <- c("AltRightChristian", "Anarcho_Capitalism", "AskAConservative", "AverageRedditor", "Chodi", 
+                      "Conservative", "Conspiracy", "CringeAnarchy", "DonaldTrump",  "FemaleDatingStrategy", "GenderCritical", 
+                      "MetaCanada", "MGTOW", "MillionDollarExtreme", "ProtectAndServe", "The_Donald", "Tucker_Carlson","UnpopularOpinion")
+
+ggplot(report_reason, aes(derived_subreddit, link_flair_text, fill = n)) + 
+  geom_tile() +
+  labs(title = "Reason provided for reporting on AHS", x = "", fill = "# Reports", y ="") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 11),
+      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_gradient(low = "#dfecd1", high = "#0b383b") +
+  scale_x_discrete(labels = subreddit_names)
+```

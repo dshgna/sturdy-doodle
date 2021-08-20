@@ -1,5 +1,5 @@
 ---
-title: "Exploratory Analysis of "
+title: "Exploratory Analysis of Polarised Subreddits"
 author: "Dulshani"
 date: "16/06/2021"
 output: html_document
@@ -13,144 +13,159 @@ knitr::opts_chunk$set(
 library(arrow) # data retrieval from storage
 library(ggrepel) # intelligent label placement
 library(gridExtra) # combine multiple plots
+library(scales) # Transformations
 library(tidyverse) # dataframe manipulation
 library(quanteda)
 library(quanteda.textstats)
 
 source('utility_functions.R')
+
+options(arrow.skip_nul = TRUE)
 ```
 
 
 ```{r read_data}
-subreddits = list('GenderCritical', 'MGTOW', 'MGTOW2', 'conservative', 'conspiracy', 'cringeanarchy', 'metacanada')
-```
+# Get file names from GCS bucket
+subreddits <- list(dir('../data'))[[1]]
+#subreddits = list('GenderCritical', 'MGTOW', 'MGTOW2', 'conservative', 'conspiracy', 'cringeanarchy', 'metacanada')
 
-```{r}
-combined <- read_reddit_data('changemyview') %>%
-  select(-c('link_flair_text', 'upvote_ratio'))
+# Remove AHS and combined
+subreddits <- subreddits[-which(subreddits == 'AgainstHateSubreddits')]
+subreddits <- subreddits[-which(subreddits == 'combined_preprocessed')]
+
+# Combine data into one large dataframe
+combined <- as.data.frame(matrix(ncol = 8))
+colnames(combined) <- c("subreddit", "title", "selftext", "created_utc", "author", "num_comments", "score", "url")
 
 for (subreddit in subreddits) {
   print(subreddit)
-  subreddit_df <- read_reddit_data(subreddit) %>%
-    select_if(!names(.) %in% c('link_flair_text', 'upvote_ratio'))
+  subreddit_df <- read_reddit_data(subreddit)
+  
+  # Subreddit specific pre-processing steps
+  if(subreddit == 'changemyview'){
+      subreddit_df <- subreddit_df %>%
+               filter(!str_count(link_flair_text, 'Removed') > 0 | is.na(link_flair_text))      
+  }   
+  
+  subreddit_df <- subreddit_df %>%
+        select_if(!names(.) %in% c('link_flair_text', 'upvote_ratio'))
+  
+  # Combine dataframes
   combined <- union(combined, subreddit_df)
 }
 ```
 
-```{r}
-# Preprocess data
+```{r preprocess}
+# Pre-process data
 combined_preprocessed <- pre_process_post_data(combined) %>%
-  mutate(post_length = str_count(selftext, '\\s+') + 1)
+  mutate(subreddit = factor(subreddit, 
+                            levels = c("changemyview", "AltRightChristian", "Anarcho_Capitalism", "askaconservative", "averageredditor", "Chodi", 
+                                       "Conservative", "conspiracy", "CringeAnarchy", "donaldtrump",  "FemaleDatingStrategy", "GenderCritical", 
+                                       "metacanada", "MGTOW", "MGTOW2", "milliondollarextreme", "ProtectAndServe", "The_Donald", "tucker_carlson","unpopularopinion")
+                            ))
 ```
 
 ```{r}
-head(combined_preprocessed)
+dim(combined_preprocessed)
+# 2545803  
 ```
+
+```{r}
+head(combined_preprocessed, 40)
+```
+
+```{r}
+# Save pre-processed dataset to disk
+write_reddit_data(combined_preprocessed, 'combined_preprocessed')
+```
+
+
 ```{r}
 (combined_summary <- combined_preprocessed %>%
   group_by(subreddit) %>%
   summarise(num_posts = n(),
             median_score = median(score),
-            median_comments = median(num_comments),
-            median_post_length = median(post_length)
-            )
+            median_comments = median(num_comments)
+            ) %>%
+   mutate(subreddit = factor(subreddit, levels = c("changemyview", "AltRightChristian", "Anarcho_Capitalism", "askaconservative",     "averageredditor", "Chodi", "Conservative", "conspiracy", "CringeAnarchy", "donaldtrump", "FemaleDatingStrategy", "GenderCritical", "metacanada", "MGTOW", "MGTOW2", "milliondollarextreme", "ProtectAndServe", "The_Donald", "tucker_carlson","unpopularopinion")))
 )
 ```
 
-```{r}
-# Declare color palette
-color_palette <- c("#d73d64",
-          "#70be49",
-          "#cb72e1",
-          "#589646",
-          "#5f6bda",
-          "#d89b31",
-          "#8b4aac",
-          "#b2b050",
-          "#cf469f",
-          "#59c39e",
-          "#d35631",
-          "#4eacd7",
-          "#a1493d",
-          "#378562",
-          "#cd8bc9",
-          "#756f29",
-          "#6b7ec4",
-          "#c88651",
-          "#9d4b76",
-          "#e07e88")
-
-
+```{r descriptive_statistics}
 # Number of Posts
-p0 <- combined_preprocessed %>%
-  ggplot( aes(x = subreddit, fill = subreddit)) +
-    geom_bar(alpha = 0.6) +
-    labs(title = "Number of Posts", x = "", y = "") +
-  theme_minimal() +
-  theme(
-      legend.position="none",
-      plot.title = element_text(size=11),
-      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
-    ) +
-   scale_fill_manual(values = color_palette) 
-p0
-```
+p1 <- ggplot(combined_preprocessed, aes(x = subreddit, fill = subreddit)) +
+        geom_bar(alpha = 0.6) +
+        labs(title = "Number of Posts", x = "", y = "") +
+        theme_minimal() +
+        theme(legend.position = "none", 
+              plot.title = element_text(size=11), 
+              axis.text.x = element_blank()) +
+        scale_fill_manual(values = color_palette) +
+        scale_x_discrete(labels = subreddit_names) +
+        scale_y_continuous(trans = 'sqrt')
 
-
-
-```{r}
-# Post Length
-p1 <- combined_preprocessed %>%
-  ggplot( aes(x = subreddit, y = post_length, fill = subreddit)) +
-    geom_violin() +
-    scale_y_continuous(trans = 'log10') +
-    theme_minimal() +
-    theme(
-      legend.position="none",
-      plot.title = element_text(size=11),
-      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
-    ) +
-    ggtitle("Post Length") +
-    xlab("") +
-    ylab("")
-```
-
-
-```{r}
 # Number of Comments
-p2 <- combined_preprocessed %>%
-  ggplot( aes(x = subreddit, y = num_comments, fill = subreddit)) +
-    geom_violin() +
-    scale_y_continuous(trans = 'log10') +
-    theme_minimal() +
-    theme(
-      legend.position="none",
-      plot.title = element_text(size=11),
-      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
-    ) +
-    ggtitle("Number of Comments") +
-    xlab("") +
-    ylab("")
-```
+p2 <- ggplot(combined_preprocessed, aes(x = subreddit, y = num_comments, fill = subreddit)) +
+        geom_violin(alpha = 0.6) +
+        theme_minimal() +
+        theme(
+          legend.position="none",
+          plot.title = element_text(size = 11),
+          axis.text.x = element_blank()) +
+        labs(title = "Comments per Post", x = "", y = "") +
+        scale_fill_manual(values = color_palette) +
+        scale_x_discrete(labels = subreddit_names) +
+        coord_trans(y = trans_cube)
 
-```{r}
 # Score
 p3 <- combined_preprocessed %>%
   ggplot( aes(x = subreddit, y = score, fill = subreddit)) +
-    geom_violin() +
-    scale_y_continuous(trans = 'log10') +
+    geom_violin(alpha = 0.6) +
     theme_minimal() +
     theme(
       legend.position="none",
-      plot.title = element_text(size=11),
-      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
-    ) +
-    ggtitle("Score") +
-    xlab("") +
-    ylab("")
+      plot.title = element_text(size = 11),
+      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    labs(title = "Score per Post", x = "", y = "") +
+    scale_fill_manual(values = color_palette) +
+    scale_x_discrete(labels = subreddit_names) +
+    coord_trans(y = trans_cube)
 ```
 
-```{r fig.height = 7}
-grid.arrange(p0, p1, p2, p3, nrow = 2)
+
+```{r}
+# Create corpus
+(combined_text_corpus <- corpus(combined_preprocessed, text_field = 'selftext'))
 ```
 
+
+```{r text_stat_summary}
+# Quanteda Test stat summary
+(combined_text_summary <- textstat_summary(combined_text_corpus))
+```
+
+
+```{r}
+(combined_text_summary_with_summary <- cbind(subreddit = combined_preprocessed$subreddit, combined_text_summary))
+```
+
+```{r}
+# Tokens per Post
+p4 <- combined_text_summary_with_summary %>%
+  ggplot( aes(x = subreddit, y = tokens, fill = subreddit)) +
+    geom_violin(alpha = 0.6) +
+    theme_minimal() +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(size = 11),
+            axis.text.x = element_blank()) +
+    labs(title = "Words per Post", x = "", y = "") +
+  scale_fill_manual(values = color_palette) +
+    scale_x_discrete(labels = subreddit_names) +
+   # scale_y_continuous(trans = 'sqrt')
+  coord_trans(y = trans_cube)
+```
+
+```{r fig.height = 15}
+grid.arrange(p1, p4, p2, p3, ncol = 1)
+```

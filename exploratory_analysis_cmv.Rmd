@@ -16,6 +16,7 @@ library(gridExtra) # combine multiple plots
 library(tidyverse) # dataframe manipulation
 library(quanteda)
 library(quanteda.textstats)
+library(zoo)
 
 source('utility_functions.R')
 ```
@@ -24,125 +25,132 @@ source('utility_functions.R')
 ```{r read_data}
 cmv <- read_reddit_data('changemyview')
 # Preprocess data
-cmv_pp <- pre_process_post_data(cmv)
+cmv_pp <- pre_process_post_data(cmv) %>%
+  filter(!str_count(link_flair_text, 'Removed') > 0 | is.na(link_flair_text)) %>%
+  mutate(delta_awarded = ifelse(link_flair_text %in% c('Delta(s) from OP', 'Delta(s) from OP - Fresh Topic Friday', 
+                                                       '[∆(s) from OP]', 'Deltas(s) from OP', 'FTFdeltaOP', 'OP Delta/FTF'), 
+                                1, 0))
+```
+
+
+```{r}
+cmv_pp %>%
+  group_by(link_flair_text) %>%
+  summarise(n = n())
 ```
 
 ```{r}
+cmv_pp %>%
+  filter(author == 'None')
+```
 
+
+```{r}
+(cmv_pp_month <- cmv_pp %>%
+  mutate(date_created = as.yearmon(created_utc)) %>%
+  group_by(date_created) %>%
+  summarise(num_posts = n(), 
+            delta_total = sum(delta_awarded, na.rm = TRUE),
+            delta_percentage = round(delta_total*100/num_posts, 2))
+) 
 ```
 
 ```{r}
-
+p1 <- ggplot(cmv_pp_month, aes(x = date_created, y = num_posts)) + 
+  geom_line(color = "#d73d64", size = 0.5) +
+  theme_minimal() +
+   theme(
+      legend.position="none",
+      plot.title = element_text(size=11),
+      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+    ) +
+  labs(title = "Number of Posts per Month", x = "", y = "") +
+  ylim(200, 800)
 ```
+
+```{r}
+p3 <- ggplot(cmv_pp_month, aes(x = date_created, y = delta_percentage)) + 
+  geom_line(color = "#d73d64", size = 0.5) +
+  theme_minimal() +
+   theme(
+      legend.position="none",
+      plot.title = element_text(size=11),
+      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+    ) +
+  labs(title = "% Deltas Awarded per Month", x = "", y = "") + 
+  ylim(20, 80)
+```
+
+
+
+```{r}
+# Scores per Post
+p2 <- ggplot(cmv_pp, aes(x = score)) + 
+  geom_histogram(boundary = 0, fill = "#d73d64", alpha = 0.6, bins = 20) +
+  scale_y_continuous(trans = 'sqrt') +
+  scale_x_continuous(trans = 'sqrt', breaks= c(150, 1000, 5000, 10000, 20000, 40000)) +
+  theme_minimal() +
+   theme(
+      legend.position="none",
+      plot.title = element_text(size=11),
+      #axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+    ) +
+  labs(title = "Score per Post", x = "Post Score", y = "# Posts") 
+```
+
+
+```{r}
+# Comments per Post
+p4 <- ggplot(cmv_pp, aes(x = num_comments)) + 
+  geom_histogram(boundary = 0, fill = "#d73d64", alpha = 0.6, bins = 20) +
+  scale_y_continuous(trans = 'sqrt') +
+  scale_x_continuous(trans = 'sqrt', breaks= c(25, 250, 500, 1000, 2000, 4000, 6000)) +
+  theme_minimal() +
+   theme(
+      legend.position = "none",
+      plot.title = element_text(size=11)
+      #axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+    ) +
+  labs(title = "Comments per Post", x = "# Comments", y = "# Posts") 
+```
+
+
+```{r fig.height = 7}
+grid.arrange(p1, p4, p3, p2, nrow = 2)
+```
+
+```{r}
+# User Distribution
+cmv_users <- cmv_pp %>%
+  filter(author != 'None') %>%
+  group_by(author) %>%
+  summarise(num_user_posts = n())
+
+p5 <- ggplot(cmv_users, aes(x = num_user_posts)) + 
+  geom_histogram(boundary = 0, fill = "#d73d64", alpha = 0.4, binwidth = 1) +
+  scale_y_continuous(trans = 'sqrt') +
+  theme_minimal() +
+   theme(
+      legend.position="none",
+      plot.title = element_text(size=11)
+      #axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+    ) +
+  labs(title = "Posts per Redditor", x = "# Posts", y = "# Redditors") 
+
+p5
+```
+
+```{r}
+cmv_users %>%
+  filter(author != 'None') %>%
+  arrange(desc(num_user_posts))
+```
+
 
 ```{r}
 head(combined_preprocessed)
 ```
-```{r}
-(combined_summary <- combined_preprocessed %>%
-  group_by(subreddit) %>%
-  summarise(num_posts = n(),
-            median_score = median(score),
-            median_comments = median(num_comments),
-            median_post_length = median(post_length)
-            )
-)
-```
-
-```{r}
-# Declare color palette
-color_palette <- c("#d73d64",
-          "#70be49",
-          "#cb72e1",
-          "#589646",
-          "#5f6bda",
-          "#d89b31",
-          "#8b4aac",
-          "#b2b050",
-          "#cf469f",
-          "#59c39e",
-          "#d35631",
-          "#4eacd7",
-          "#a1493d",
-          "#378562",
-          "#cd8bc9",
-          "#756f29",
-          "#6b7ec4",
-          "#c88651",
-          "#9d4b76",
-          "#e07e88")
-
-
-# Number of Posts
-p0 <- combined_preprocessed %>%
-  ggplot( aes(x = subreddit, fill = subreddit)) +
-    geom_bar(alpha = 0.6) +
-    labs(title = "Number of Posts", x = "", y = "") +
-  theme_minimal() +
-  theme(
-      legend.position="none",
-      plot.title = element_text(size=11),
-      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
-    ) +
-   scale_fill_manual(values = color_palette) 
-p0
-```
 
 
 
-```{r}
-# Post Length
-p1 <- combined_preprocessed %>%
-  ggplot( aes(x = subreddit, y = post_length, fill = subreddit)) +
-    geom_violin() +
-    scale_y_continuous(trans = 'log10') +
-    theme_minimal() +
-    theme(
-      legend.position="none",
-      plot.title = element_text(size=11),
-      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
-    ) +
-    ggtitle("Post Length") +
-    xlab("") +
-    ylab("")
-```
-
-
-```{r}
-# Number of Comments
-p2 <- combined_preprocessed %>%
-  ggplot( aes(x = subreddit, y = num_comments, fill = subreddit)) +
-    geom_violin() +
-    scale_y_continuous(trans = 'log10') +
-    theme_minimal() +
-    theme(
-      legend.position="none",
-      plot.title = element_text(size=11),
-      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
-    ) +
-    ggtitle("Number of Comments") +
-    xlab("") +
-    ylab("")
-```
-
-```{r}
-# Score
-p3 <- combined_preprocessed %>%
-  ggplot( aes(x = subreddit, y = score, fill = subreddit)) +
-    geom_violin() +
-    scale_y_continuous(trans = 'log10') +
-    theme_minimal() +
-    theme(
-      legend.position="none",
-      plot.title = element_text(size=11),
-      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
-    ) +
-    ggtitle("Score") +
-    xlab("") +
-    ylab("")
-```
-
-```{r fig.height = 7}
-grid.arrange(p0, p1, p2, p3, nrow = 2)
-```
 
