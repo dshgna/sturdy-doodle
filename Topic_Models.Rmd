@@ -9,14 +9,15 @@ knitr::opts_chunk$set(
 )
 
 library(arrow) # data retrieval from storage
+library(memoise) # caching
 library(quanteda) # general purpose text analysis
 library(quanteda.textstats) # descriptive statistics for text
 library(spacyr) # lemmatisation, pos tagging
 library(stm) # topic models
+library(tictoc) # timer
 library(tidyverse) # dataframe manipulation
 library(wordcloud) # wordcloud visualization
 
-#spacy_initialize(model = "en_core_web_trf")
 source('utility_functions.R')
 ```
 
@@ -34,24 +35,23 @@ dim(main_df)
 # Pre-processing before tokenizing
 
 # Remove URLS and zero-width spaces &#x200B
-url_pattern <- "[(]?http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
-zero_width_space_pattern <- "&#x200(b|B)"
-replace_characters <- "(&amp; | \n\ | \\[ )"
-replace_title_word_list <- "cmv"
+url_pattern <- "[(\\[]?http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
+replace_characters <- "(&amp;|\n|\r|#x200b;|&gt;)"
+replace_title_word_list <- "cmv:"
 
 main_df_pp <- main_df %>%
     mutate(
         selftext = tolower(selftext),
         title = tolower(title),
         selftext = str_replace_all(selftext, url_pattern, ''), 
-        selftext = str_replace_all(selftext, zero_width_space_pattern, ''),
         selftext = str_replace_all(selftext, replace_characters, ''),
         title = str_replace_all(title, replace_title_word_list, '')
     ) %>%
     filter(selftext != '') %>% 
-    mutate(text_with_title = paste(title, selftext)) 
-#%>%
-#    select(!c("selftext")) 
+    mutate(text_with_title = paste(title, selftext)) %>% 
+    distinct(text_with_title, .keep_all = TRUE) # Remove duplicated text with title (main_df_pp[!duplicated(main_df_pp$text_with_title),])
+
+#%>% select(!c("selftext")) 
 
 dim(main_df_pp)
 ```
@@ -65,25 +65,25 @@ dim(main_df_pp)
 ```{r text_stat_summary}
 # Quanteda Test stat summary
 main_text_summary <- textstat_summary(main_text_corpus)
+(main_text_summary <- cbind(subreddit = main_df_pp$subreddit, main_text_summary))
 ```
-
-
-```{r combine_summary_subreddit}
-# Combine text summary with df
-(main_text_with_summary <- cbind(subreddit = main_df_pp$subreddit, main_text_summary))
-```
-
-
 
 ```{r}
 # View samples from each subreddit to identify what to preprocess
 subreddits <- unique(main_df_pp$subreddit)
-for (s in subreddits) {
+
+tic()
+
+map(subreddits, function(subreddit) { ## only need to swap `lapply` for `map`
     subreddit_df <- main_df_pp %>%
-        filter(subreddit == s) %>%
-        select(title, selftext)
-    print(head(subreddit_df))
-} 
+        filter(subreddit == subreddit) %>%
+        select(text_with_title)
+   return(head(subreddit_df))
+})
+
+toc()
+# for loops: 0.561
+# purr: 0.767
 ```
 
 ```{r}
@@ -92,7 +92,7 @@ for (s in subreddits) {
 # Number of Posts
 p1_pp <- ggplot(main_df_pp, aes(x = subreddit, fill = subreddit)) +
         geom_bar(alpha = 0.6) +
-        labs(title = "Number of Posts", x = "", y = "") +
+        labs(title = "Number of Posts", x = "", y = "") +library(quanteda)
         theme_minimal() +
         theme(legend.position = "none", 
               plot.title = element_text(size=11), 
@@ -102,7 +102,7 @@ p1_pp <- ggplot(main_df_pp, aes(x = subreddit, fill = subreddit)) +
         scale_y_continuous(trans = 'sqrt', labels = comma)
 
 # Tokens per Post
-p2_pp <- main_text_with_summary %>%
+p2_pp <- main_text_summary %>%
   ggplot( aes(x = subreddit, y = tokens, fill = subreddit)) +
     geom_violin(alpha = 0.6) +
     theme_minimal() +
@@ -122,12 +122,28 @@ grid.arrange(p1_pp, p2_pp, ncol = 1)
 
 
 
-
-
 ```{r}
-#rd_posts <- rd[!duplicated(rd$post_text),] %>%
-#  mutate(complete_text = str_replace_all(paste(title, post_text), "\031", "'"))
+# Function to parse one batch of tokens
+batch_token_parse <- function(s) {
+    print(s)
+    # Subset corpus
+    s_corpus <- corpus_subset(main_text_corpus, subreddit == s)
+    cmv_spacy_tokens <- spacy_parse(s_corpus) %>% 
+        subset(!pos %in% c('ADP', 'ADV', 'AUX', 'PART', 'PUNCT', 'SPACE', 'SYM', 'NUM')) %>%
+        subset(!entity %in% c('PERCENT_I'))
+   return(cmv_spacy_tokens)
+}
+
+# Memoise for caching
+batch_token_parse <- memoise(batch_token_parse)
+
+tic()
+# Batch parse all tokens
+all_tokens <- map(subreddits[1:2], batch_token_parse)
+toc()
 ```
+
+
 
 
 
@@ -139,17 +155,24 @@ grid.arrange(p1_pp, p2_pp, ncol = 1)
 cmv_spacy_tokens <- spacy_parse(main_text_corpus) %>% 
         subset(!pos %in% c('ADP', 'ADV', 'AUX', 'PART', 'PUNCT', 'SPACE', 'SYM', 'NUM')) %>%
         subset(!entity %in% c('PERCENT_I'))
-        #subset(!pos %in% c('VERB', , 'X', 'NUM' 'ADV', 'PART',)) %>% 
-  
+        #subset(!pos %in% c('VERB', , 'X', 'NUM' 'ADV', 'PART',)) %>%
+```
+
+
+```{r}
 # Convert from Spacy to Quanteda
-cmv_text_tokens <- cmv_spacy_tokens %>%
+(cmv_text_tokens <- cmv_spacy_tokens %>%
         as.tokens(use_lemma = TRUE) %>%
         #tokens_remove(pattern = c("amp;"), valuetype = "regex", padding = TRUE) %>% 
         tokens_remove(pattern = c("_"), valuetype = "fixed", padding = TRUE) %>% 
         tokens_remove(stopwords("en"), padding = TRUE) %>%
         tokens_ngrams(n = 1:2) 
-        #tokens_remove(pattern = c("?"), padding = TRUE) # Remove single character tokens
+        #tokens_remove(pattern = c("?"), padding = TRUE) # Remove single character tokens)
+ )
+```
 
+
+```{r}
 # Create document feature matrix
 # Trim dfm to remove features that appear less than 5 times in the corpus 
 # and those that appear in more than 90% of the documents
@@ -166,21 +189,18 @@ stm_input <- convert(cmv_dfm, to = "stm")
 ```
 
 ```{r}
-kwic(cmv_spacy_tokens %>% as.tokens(use_lemma = TRUE), pattern = "'", valuetype = "regex", window = 10)
-```
-
-
-```{r}
 # Choose a number of appropriate topics
+tic()
 k_search_output <- searchK(stm_input$documents, 
                         stm_input$vocab,
-                        K = c(10:100), 
+                        K = c(10:20), 
                         prevalence = ~ subreddit,
                         content = ~ subreddit, 
                         data = stm_input$meta,
                         heldout.seed = 123, 
-                        verbose = TRUE)
-
+                        verbose = TRUE,
+                        cores = 8)
+toc()
 plot(k_search_output)
 ```
 
@@ -205,6 +225,10 @@ cmv_model <- stm(stm_input$documents, stm_input$vocab, K = 20,
 plot(cmv_model)
 ```
 
+```{r}
+# Explore tokens in a document
+kwic(cmv_spacy_tokens %>% as.tokens(use_lemma = TRUE), pattern = "'", valuetype = "regex", window = 10)
+```
 
 
 ```{r}
