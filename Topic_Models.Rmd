@@ -230,25 +230,28 @@ cc_text_tokens <- readRDS(file = "../data/parsed_tokens.rds")
 # Find out dropped documents when pre-processing and converted to dfm
 cp <- docnames(main_text_corpus)
 d <- docnames(cc_dfm)
-(retained <- cp[(cp %in% d)])
+retained <- cp[(cp %in% d)]
 ```
-
-```{r}
-#corpus_docvars <- docvars(blasphemy_corpus, 'region')#[-6026]
-```
-
-
 
 ```{r}
 # Spacy removes the docvars - re-attach docvars from the initial corpus
-docvars(cc_dfm) <- docvars(retained)
+docvars(main_text_corpus, 'docid') <- docid(main_text_corpus)
+retained_corpus <- corpus_subset(main_text_corpus, docid %in% retained)
+docvars(cc_dfm) <- docvars(retained_corpus)
+```
+
+```{r save_dfm}
+# Save STM input
+saveRDS(cc_dfm, file = "../data/cc_dfm.rds")
 ```
 
 
-
+```{r}
+sample_dfm = dfm_sample(cc_dfm, size = 80000)
+```
 
 ```{r}
-
+stm_sample_input <- convert(sample_dfm, to = "stm")
 ```
 
 
@@ -268,18 +271,28 @@ stm_input <- readRDS(file = "../data/stm_input.rds")
 ```
 
 ```{r}
+dim(stm_input)
+```
+
+
+
+```{r}
 # Choose a number of appropriate topics
 tic()
-k_search_output <- searchK(stm_input$documents, 
-                        stm_input$vocab,
-                        K = c(10:20), 
+k_search_output <- searchK(stm_sample_input$documents, 
+                        stm_sample_input$vocab,
+                        K = c(10, 20, 25, 30, 35, 40, 50), 
                         prevalence = ~ subreddit,
-                        content = ~ subreddit, 
-                        data = stm_input$meta,
+                        #content = ~ subreddit, 
+                        data = stm_sample_input$meta,
                         heldout.seed = 123, 
                         verbose = TRUE,
                         cores = 8)
 toc()
+```
+
+
+```{r}
 plot(k_search_output)
 ```
 
