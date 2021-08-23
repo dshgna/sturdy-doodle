@@ -17,6 +17,7 @@ library(stm) # topic models
 library(tictoc) # timer
 library(tidyverse) # dataframe manipulation
 library(wordcloud) # wordcloud visualization
+library(cld2) # remove non-English words
 
 source('utility_functions.R')
 
@@ -39,6 +40,7 @@ dim(main_df)
 # Remove URLS and zero-width spaces &#x200B
 url_pattern <- "[(\\[]?http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
 replace_characters <- "(&amp;|\n|\r|#x200b;|&gt;)"
+replace_word_list <- "()"
 replace_title_word_list <- "cmv:"
 
 main_df_pp <- main_df %>%
@@ -266,8 +268,9 @@ stm_input <- convert(cc_dfm, to = "stm")
 saveRDS(stm_input, file = "../data/stm_input.rds")
 ```
 
-```{r read_stm_input}
+```{r read_saved_input}
 stm_input <- readRDS(file = "../data/stm_input.rds")
+cc_dfm <- readRDS(file = "../data/cc_dfm.rds")
 ```
 
 ```{r}
@@ -279,12 +282,12 @@ dim(stm_input)
 ```{r}
 # Choose a number of appropriate topics
 tic()
-k_search_output <- searchK(stm_sample_input$documents, 
-                        stm_sample_input$vocab,
+k_search_output <- searchK(stm_input$documents, 
+                        stm_input$vocab,
                         K = c(10, 20, 25, 30, 35, 40, 50), 
                         prevalence = ~ subreddit,
                         #content = ~ subreddit, 
-                        data = stm_sample_input$meta,
+                        data = stm_input$meta,
                         heldout.seed = 123, 
                         verbose = TRUE,
                         cores = 8)
@@ -298,12 +301,31 @@ plot(k_search_output)
 
 
 ```{r}
-k_search_output
+values <- data.frame(K = unlist(k_search_output$results$K),
+                     exlusivity = unlist(k_search_output$results$exclus),
+                    semcoh = unlist(k_search_output$results$semcoh),
+ heldout = unlist(k_search_output$results$heldout))
+ 
 ```
 
-```{r}
-# TODO: Plot exclusion measure
-plot(k_search_output$K, )
+```{r fig.height = 3, fig.width = 10}
+eval_1 <- ggplot(values, aes(K, heldout)) +
+    geom_point(color = "#9e6ebd") +
+    geom_line(color = "#9e6ebd") +
+  labs(title = "Heldout Likelihood", x = "K", y = "") +
+    theme_minimal()
+eval_2 <- ggplot(values, aes(K, semcoh)) +
+    geom_point(color = "#7aa457") +
+    geom_line(color = "#7aa457") +
+  labs(title = "Semantic Coherence", x = "K", y = "") +
+    theme_minimal()
+eval_3 <- ggplot(values, aes(K, exlusivity)) +
+    geom_point(color = "#cb6751") +
+  geom_line(color = "#cb6751") +
+  labs(title = "Exclusivity", x = "K", y = "") +
+    theme_minimal()
+
+grid.arrange(eval_1, eval_2, eval_3, nrow = 1)
 ```
 
 
@@ -311,11 +333,17 @@ plot(k_search_output$K, )
 ```{r, fig.height = 5, fig.width = 5}
 # Create model with optimum number of topics
 cmv_model <- stm(stm_input$documents, stm_input$vocab, K = 20,
-               data = stm_input$meta, verbose = FALSE,
+               data = stm_input$meta, verbose = TRUE,
                init.type = c("Spectral"))
 
 plot(cmv_model)
 ```
+
+
+```{r}
+saveRDS(cmv_model, file = "../data/cmv_model.rds")
+```
+
 
 ```{r}
 # Explore tokens in a document
@@ -325,27 +353,90 @@ plot(cmv_model)
 
 ```{r}
 # Wordclouds
-c1 <- cloud(cmv_model, topic = 2, scale = c(2,.25))
-c2 <- cloud(cmv_model, topic = 2, scale = c(2,.25))
-c3 <- cloud(cmv_model, topic = 3, scale = c(2,.25))
-c4 <- cloud(cmv_model, topic = 4, scale = c(2,.25))
-c5 <- cloud(cmv_model, topic = 5, scale = c(2,.25))
-c6 <- cloud(cmv_model, topic = 6, scale = c(2,.25))
-c7 <- cloud(cmv_model, topic = 7, scale = c(2,.25))
-c8 <- cloud(cmv_model, topic = 8, scale = c(2,.25))
-c9 <- cloud(cmv_model, topic = 9, scale = c(2,.25))
-c10 <- cloud(cmv_model, topic = 10, scale = c(2,.25))
+c1 <- cloud(cmv_model, topic = 1, scale = c(3,.25), color = "#89ecff")
+c2 <- cloud(cmv_model, topic = 2, scale = c(3,.25), color = "#cf2700")
+c3 <- cloud(cmv_model, topic = 3, scale = c(3,.25), color = "#2cffea")
+c4 <- cloud(cmv_model, topic = 4, scale = c(3,.25), color = "#de00a7")
+c5 <- cloud(cmv_model, topic = 5, scale = c(3,.25), color = "#00dd5f")
+c6 <- cloud(cmv_model, topic = 6, scale = c(3,.25), color = "#6f0089")
+c7 <- cloud(cmv_model, topic = 7, scale = c(3,.25), color = "#abff5c")
+c8 <- cloud(cmv_model, topic = 8, scale = c(3,.25), color = "#6a85ff")
+c9 <- cloud(cmv_model, topic = 9, scale = c(3,.25), color = "#c5b800")
+c10 <- cloud(cmv_model, topic = 10, scale = c(3,.25), color = "#000d2e")
+c11 <- cloud(cmv_model, topic = 11, scale = c(3,.25), color = "#02ea9c")
+c12 <- cloud(cmv_model, topic = 12, scale = c(3,.25), color = "#d00052")
+c13 <- cloud(cmv_model, topic = 13, scale = c(3,.25), color = "#02b9de")
+c14 <- cloud(cmv_model, topic = 14, scale = c(3,.25), color = "#770a00")
+c15 <- cloud(cmv_model, topic = 15, scale = c(3,.25), color = "#00426c")
+c16 <- cloud(cmv_model, topic = 16, scale = c(3,.25), color = "#a9bbff")
+c17 <- cloud(cmv_model, topic = 17, scale = c(3,.25), color = "#8e6d00")
+c18 <- cloud(cmv_model, topic = 18, scale = c(3,.25), color = "#006d53")
+c19 <- cloud(cmv_model, topic = 19, scale = c(3,.25), color = "#ff7473")
+c20 <- cloud(cmv_model, topic = 20, scale = c(3,.25), color = "#683700")
 ```
+
+
 ```{r}
+docs_with_text <- docvars(cc_dfm) %>%
+    mutate(text_with_title = paste(title, selftext))
+```
+
+
+
+
+```{r}
+for (x in 1:20) {
+  print('NEW TOPIC')
+  print(x)
+	sample_tweet <- findThoughts(cmv_model,
+	texts = docs_with_text$text_with_title[rowSums(cc_dfm) > 0],
+	n = 20, topics = x)$docs[[1]]
+	print(sample_tweet)
+	#plotQuote(sample_tweet, width = 50,
+	#       main = paste("Documents containing topic ", x))
+}
+```
+
+
+```{r}
+effect_estimates <- estimateEffect(c(1:20) ~ subreddit, cmv_model, meta = stm_input$meta)
+```
+
+
+```{r topic_proportions}
 # Get topic proportions for each document
 doc_topic_proportions <- make.dt(cmv_model, meta = stm_input$meta)
 # Add a new variable referring to the most likely topic for the document
-doc_topic_proportions$max_topic = max.col(doc_topic_proportions[,Topic1:Topic5])
+doc_topic_proportions$max_topic = max.col(doc_topic_proportions[,Topic1:Topic20])
+head(doc_topic_proportions)
 ```
 
+
+
+
 ```{r}
-doc_topic_proportions
+subreddit_topic_prop <- doc_topic_proportions %>%
+  group_by(subreddit, max_topic) %>%
+  summarise(value = n()) %>%
+  mutate(percent = value/sum(value)*100)
 ```
+
+```{r fig.height = 10}
+ggplot(subreddit_topic_prop, aes(subreddit, max_topic, fill = percent)) + 
+  geom_tile() +
+  labs(title = "Topic Distribution across Polarised Subreddits", x = "", fill = "% Topic", y ="") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 11),
+      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(drop=FALSE, values=colorRampPalette(c("white","red"))(5), na.value="#EEEEEE", name="Times") 
+  #scale_fill_gradient(low = "#dfecd1", high = "#863568") 
+#+
+#  scale_x_discrete(labels = subreddit_names)
+```
+
+
+
+
 
 
 ```{r}
